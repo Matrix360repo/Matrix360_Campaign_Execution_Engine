@@ -1,0 +1,19 @@
+services:
+  pratha-core:
+    build: .
+    ports:
+      - "127.0.0.1:8002:8000"
+    environment:
+      MATRIX_ENV: staging
+      MATRIX_EXEC_KEY: ${MATRIX_EXEC_KEY:?Set a unique staging-only key}
+      MATRIX_EXEC_DB: /data/marketing_execution.db
+    volumes:
+      - pratha_demo_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  pratha_demo_data:

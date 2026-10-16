@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AudienceImportV1",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "client_id",
+    "dataset_id",
+    "records"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0"
+    },
+    "client_id": {
+      "type": "string"
+    },
+    "dataset_id": {
+      "type": "string"
+    },
+    "dataset_version": {
+      "type": "string"
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "source_id",
+          "external_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email_allowed": {
+            "type": "boolean",
+            "default": false
+          },
+          "whatsapp_allowed": {
+            "type": "boolean",
+            "default": false
+          },
+          "suppressed": {
+            "type": "boolean",
+            "default": false
+          },
+          "consent_evidence_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attributes": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

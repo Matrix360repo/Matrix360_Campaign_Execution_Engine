@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CampaignContentV1",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "client_id",
+    "content_id",
+    "content_version",
+    "channel",
+    "body",
+    "approval_status"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "1.0"
+    },
+    "client_id": {
+      "type": "string"
+    },
+    "content_id": {
+      "type": "string"
+    },
+    "content_version": {
+      "type": "string"
+    },
+    "channel": {
+      "enum": [
+        "email",
+        "whatsapp"
+      ]
+    },
+    "objective": {
+      "type": "string"
+    },
+    "subject": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "body": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string"
+    },
+    "template_variables": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "media_references": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "approval_status": {
+      "enum": [
+        "draft",
+        "approved",
+        "rejected"
+      ]
+    },
+    "approver_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "compliance_metadata": {
+      "type": "object"
+    }
+  }
+}

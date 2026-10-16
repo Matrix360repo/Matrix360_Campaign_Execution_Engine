@@ -1,0 +1,18 @@
+# STAGING DEMO ONLY: no production deployment permitted without RBAC/Postgres/migrations.
+services:
+  - type: web
+    name: matrix360-pratha-staging
+    runtime: docker
+    plan: starter
+    healthCheckPath: /ready
+    envVars:
+      - key: MATRIX_ENV
+        value: staging
+      - key: MATRIX_EXEC_KEY
+        sync: false
+      - key: MATRIX_EXEC_DB
+        value: /data/marketing_execution.db
+    disk:
+      name: pratha-staging-data
+      mountPath: /data
+      sizeGB: 1

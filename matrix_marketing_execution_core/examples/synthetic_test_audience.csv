@@ -1,0 +1,5 @@
+source_id,external_id,name,email,phone,email_allowed,whatsapp_allowed,suppressed
+synthetic-test,001,Example Contact One,example1@example.test,+919000000001,true,false,false
+synthetic-test,002,Example Contact Two,example2@example.test,+919000000002,false,true,false
+synthetic-test,003,Example Suppressed,example3@example.test,+919000000003,true,true,true
+synthetic-test,004,Example Missing Permissions,example4@example.test,+919000000004,false,false,false
