@@ -1,0 +1,35 @@
+# Paid non-expiring deployment candidate; do not apply before accepting the recurring cost.
+# Baseline compute: web $7/month + PostgreSQL $6/month, plus applicable storage/usage/tax.
+# Upgrades the existing dedicated database by name; does not delete or recreate it.
+services:
+  - type: web
+    name: matrix360-pratha-staging-v04
+    runtime: python
+    region: singapore
+    plan: 0.5c-512mb
+    rootDir: matrix_marketing_execution_core
+    branch: main
+    autoDeployTrigger: 'off'
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /ready
+    envVars:
+      - key: MATRIX_ENV
+        value: staging
+      - key: PYTHON_VERSION
+        value: 3.11.17
+      - key: MATRIX_EXEC_KEY
+        generateValue: true
+      - key: MATRIX_EMBEDDED_WORKER
+        value: '1'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: matrix360-pratha-staging-db
+          property: connectionString
+databases:
+  - name: matrix360-pratha-staging-db
+    plan: 0.1c-256mb
+    region: singapore
+    postgresMajorVersion: '17'
+    diskSizeGB: 1
+    ipAllowList: []
