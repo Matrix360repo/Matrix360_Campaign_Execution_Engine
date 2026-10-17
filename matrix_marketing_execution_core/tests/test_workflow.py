@@ -6,9 +6,25 @@ from fastapi.testclient import TestClient
 def api(tmp_path,monkeypatch):
     monkeypatch.setenv('MATRIX_EXEC_DB',str(tmp_path/'test.sqlite'))
     monkeypatch.setenv('MATRIX_EXEC_KEY','test-key')
+    schema=None
+    url=os.getenv('MATRIX_TEST_POSTGRES','')
+    if url:
+        import psycopg,uuid
+        from psycopg import sql
+        from urllib.parse import urlencode
+        schema='test_'+uuid.uuid4().hex
+        with psycopg.connect(url,autocommit=True) as setup:
+            setup.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+        monkeypatch.setenv('DATABASE_URL',url+('\u0026' if '?' in url else '?')+urlencode({'options':'-csearch_path='+schema}))
+    else: monkeypatch.delenv('DATABASE_URL',raising=False)
     import importlib,app.main
     m=importlib.reload(app.main)
-    with TestClient(m.app) as client: yield client
+    try:
+        with TestClient(m.app) as client: yield client
+    finally:
+        if schema:
+            with psycopg.connect(url,autocommit=True) as setup:
+                setup.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
 
 def post(api,path,payload=None,expected=200):
     r=api.post(path,json=payload,headers={'X-Admin-Key':'test-key'})
