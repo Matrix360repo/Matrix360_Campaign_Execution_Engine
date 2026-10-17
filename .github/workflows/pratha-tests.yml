@@ -1,14 +1,32 @@
-name: Pratha independent engine tests
+name: Pratha independent engine acceptance
 on:
   push:
-    paths: ['matrix_marketing_execution_core/**', '.github/workflows/pratha-tests.yml']
+    paths: ['matrix_marketing_execution_core/**', '.github/workflows/pratha-tests.yml', 'render.yaml']
   pull_request:
-    paths: ['matrix_marketing_execution_core/**', '.github/workflows/pratha-tests.yml']
+    paths: ['matrix_marketing_execution_core/**', '.github/workflows/pratha-tests.yml', 'render.yaml']
 permissions:
   contents: read
 jobs:
-  test:
+  acceptance:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        backend: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: acceptance
+          POSTGRES_PASSWORD: synthetic-ci-only-password
+          POSTGRES_DB: acceptance
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MATRIX_TEST_POSTGRES: ${{ matrix.backend == 'postgres' && 'postgresql://acceptance:synthetic-ci-only-password@localhost:5432/acceptance' || '' }}
     defaults:
       run:
         working-directory: matrix_marketing_execution_core
@@ -19,3 +37,34 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -r requirements.txt
       - run: python -m pytest -q
+
+  browser:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: matrix_marketing_execution_core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements.txt
+      - run: npm install --prefix tests/browser --no-package-lock
+      - run: npx --prefix tests/browser playwright install --with-deps chromium
+      - name: Start local synthetic application
+        run: |
+          MATRIX_EXEC_DB=/tmp/pratha-browser-acceptance.db MATRIX_EXEC_KEY=browser-synthetic-bootstrap-key MATRIX_ENV=development MATRIX_EMBEDDED_WORKER=1 python -m uvicorn app.main:app --host 127.0.0.1 --port 8003 > /tmp/pratha-browser-server.log 2>&1 &
+          python - <<'PYREADY'
+          import time,urllib.request
+          for attempt in range(100):
+              try:
+                  urllib.request.urlopen('http://127.0.0.1:8003/ready',timeout=1)
+                  break
+              except Exception:
+                  time.sleep(.1)
+          else: raise RuntimeError('Application did not start')
+          PYREADY
+      - run: node tests/browser/acceptance.cjs

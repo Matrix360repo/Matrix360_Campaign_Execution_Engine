@@ -31,3 +31,7 @@ temp/
 # Operating system
 .DS_Store
 Thumbs.db
+
+node_modules/
+*.dump
+*.backup

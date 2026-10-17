@@ -7,4 +7,4 @@ COPY app ./app
 RUN mkdir -p /data && useradd -r -u 10001 -m appuser && chown -R appuser:appuser /data /srv/app
 USER appuser
 EXPOSE 8000
-CMD ["python","-m","uvicorn","app.main:app","--host","0.0.0.0","--port","8000"]
+CMD ["sh","-c","exec python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
