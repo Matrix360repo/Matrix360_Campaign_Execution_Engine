@@ -1,0 +1,26 @@
+# Candidate only: requires an authorized, isolated external PostgreSQL login.
+# No Render database or paid instance is provisioned by this Blueprint.
+# Free hosting may sleep; this is restricted simulation staging.
+services:
+  - type: web
+    name: matrix360-pratha-staging-v04
+    runtime: python
+    region: singapore
+    plan: free
+    rootDir: matrix_marketing_execution_core
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /ready
+    envVars:
+      - key: MATRIX_ENV
+        value: staging
+      - key: PYTHON_VERSION
+        value: 3.11.17
+      - key: MATRIX_EXEC_KEY
+        generateValue: true
+      - key: MATRIX_EMBEDDED_WORKER
+        value: '1'
+      - key: DATABASE_URL
+        sync: false
