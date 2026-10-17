@@ -47,6 +47,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS leads(id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES clients(id), source_id TEXT NOT NULL, external_id TEXT NOT NULL, name TEXT, email TEXT, phone TEXT, email_allowed INTEGER NOT NULL DEFAULT 0, whatsapp_allowed INTEGER NOT NULL DEFAULT 0, suppressed INTEGER NOT NULL DEFAULT 0, UNIQUE(client_id,source_id,external_id));
         CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id), lead_id TEXT NOT NULL REFERENCES leads(id), status TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(campaign_id,lead_id));
         CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id), lead_id TEXT NOT NULL REFERENCES leads(id), job_id TEXT, kind TEXT NOT NULL, at TEXT NOT NULL, UNIQUE(job_id,kind));
+        CREATE TABLE IF NOT EXISTS campaign_audience(campaign_id TEXT NOT NULL REFERENCES campaigns(id), lead_id TEXT NOT NULL REFERENCES leads(id), PRIMARY KEY(campaign_id,lead_id));
+        CREATE TABLE IF NOT EXISTS approval_snapshots(campaign_id TEXT PRIMARY KEY REFERENCES campaigns(id), created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id), action TEXT NOT NULL, at TEXT NOT NULL, details TEXT NOT NULL);
         ''')
 
@@ -141,6 +143,9 @@ def import_leads(payload:ImportIn):
             # Do not overwrite permission fields on duplicate import: explicit permission-management workflow required.
             before=db.execute('SELECT id FROM leads WHERE client_id=? AND source_id=? AND external_id=?',(payload.client_id,lead.source_id,lead.external_id)).fetchone()
             if before:
+                # Suppression and revocation must take effect even on repeat imports.
+                db.execute('UPDATE leads SET suppressed=MAX(suppressed,?), email_allowed=MIN(email_allowed,?), whatsapp_allowed=MIN(whatsapp_allowed,?) WHERE id=?',
+                           (int(lead.suppressed),int(lead.email_allowed),int(lead.whatsapp_allowed),before['id']))
                 existing+=1;continue
             db.execute('INSERT INTO leads VALUES(?,?,?,?,?,?,?,?,?,?)',(ident(),payload.client_id,lead.source_id,lead.external_id,lead.name,lead.email,lead.phone,int(lead.email_allowed),int(lead.whatsapp_allowed),int(lead.suppressed)))
             added+=1
@@ -163,8 +168,15 @@ def validate_campaign(campaign_id: str):
 @app.post('/campaigns/{campaign_id}/approve',dependencies=[Depends(authorize)])
 def approve_campaign(campaign_id: str):
     with conn() as db:
+        db.execute('BEGIN IMMEDIATE')
         c=row_or_404(db,'campaigns',campaign_id)
         if c['status']!='validated': raise HTTPException(409,'Campaign must be validated before approval')
+        flag='email_allowed' if c['channel']=='email' else 'whatsapp_allowed'
+        address='email' if c['channel']=='email' else 'phone'
+        db.execute(f"INSERT INTO campaign_audience SELECT ?,id FROM leads WHERE client_id=? AND {flag}=1 AND suppressed=0 AND TRIM(COALESCE({address},''))!=''",(campaign_id,c['client_id']))
+        count=db.execute('SELECT COUNT(*) FROM campaign_audience WHERE campaign_id=?',(campaign_id,)).fetchone()[0]
+        if not count: raise HTTPException(422,'No eligible audience remains; approval refused')
+        db.execute('INSERT INTO approval_snapshots VALUES(?,?)',(campaign_id,now()))
         db.execute('UPDATE campaigns SET status=?,approved_at=? WHERE id=?',('approved',now(),campaign_id))
         audit(db,campaign_id,'approved','Approved for MOCK dispatch only')
         return {'campaign_id':campaign_id,'status':'approved','permission':'mock_only'}
@@ -172,11 +184,14 @@ def approve_campaign(campaign_id: str):
 @app.post('/campaigns/{campaign_id}/dispatch-mock',dependencies=[Depends(authorize)])
 def mock_dispatch(campaign_id: str):
     with conn() as db:
+        db.execute('BEGIN IMMEDIATE')
         c=row_or_404(db,'campaigns',campaign_id)
         if c['status'] not in ('approved','completed'): raise HTTPException(409,'Campaign must be approved before dispatch')
         flag='email_allowed' if c['channel']=='email' else 'whatsapp_allowed'
         address='email' if c['channel']=='email' else 'phone'
-        leads=db.execute(f'''SELECT id FROM leads WHERE client_id=? AND {flag}=1 AND suppressed=0 AND TRIM(COALESCE({address},''))!='' ORDER BY id''',(c['client_id'],)).fetchall()
+        if not db.execute('SELECT 1 FROM approval_snapshots WHERE campaign_id=?',(campaign_id,)).fetchone():
+            raise HTTPException(409,'Legacy campaign has no approved audience snapshot; create and approve a new campaign')
+        leads=db.execute(f'''SELECT id FROM leads WHERE client_id=? AND {flag}=1 AND suppressed=0 AND TRIM(COALESCE({address},''))!='' AND id IN (SELECT lead_id FROM campaign_audience WHERE campaign_id=?) ORDER BY id''',(c['client_id'],campaign_id)).fetchall()
         created=0
         for lead in leads:
             jid=ident()
@@ -207,7 +222,7 @@ def campaign_report(campaign_id: str):
         c=row_or_404(db,'campaigns',campaign_id)
         jobs=db.execute('SELECT COUNT(*) n FROM jobs WHERE campaign_id=?',(campaign_id,)).fetchone()['n']
         rows=db.execute('SELECT kind,COUNT(*) n,COUNT(DISTINCT lead_id) unique_leads FROM events WHERE campaign_id=? GROUP BY kind',(campaign_id,)).fetchall()
-        return {'campaign':dictrow(c),'mock_jobs':jobs,'event_counts':{r['kind']:r['n'] for r in rows},'unique_leads_by_event':{r['kind']:r['unique_leads'] for r in rows},'live_messages_sent':0}
+        return {'execution_mode':'simulated','provider_accepted':0,'provider_delivered':0,'campaign':dictrow(c),'mock_jobs':jobs,'event_counts':{r['kind']:r['n'] for r in rows},'unique_leads_by_event':{r['kind']:r['unique_leads'] for r in rows},'live_messages_sent':0}
 
 @app.get('/campaigns/{campaign_id}/audience',dependencies=[Depends(authorize)])
 def audience(campaign_id: str):
@@ -215,7 +230,12 @@ def audience(campaign_id: str):
         c=row_or_404(db,'campaigns',campaign_id)
         flag='email_allowed' if c['channel']=='email' else 'whatsapp_allowed'
         address='email' if c['channel']=='email' else 'phone'
-        rows=db.execute(f'''SELECT id,source_id,external_id,name,{address} destination FROM leads WHERE client_id=? AND suppressed=0 AND {flag}=1 AND TRIM(COALESCE({address},''))!='' ORDER BY id LIMIT 1000''',(c['client_id'],)).fetchall()
+        snapshot=db.execute('SELECT 1 FROM approval_snapshots WHERE campaign_id=?',(campaign_id,)).fetchone()
+        if c['status'] in ('approved','completed') and not snapshot:
+            raise HTTPException(409,'Legacy campaign has no approved audience snapshot')
+        scope=' AND id IN (SELECT lead_id FROM campaign_audience WHERE campaign_id=?)' if snapshot else ''
+        params=(c['client_id'],campaign_id) if snapshot else (c['client_id'],)
+        rows=db.execute(f'''SELECT id,source_id,external_id,name,{address} destination FROM leads WHERE client_id=? AND suppressed=0 AND {flag}=1 AND TRIM(COALESCE({address},''))!='' {scope} ORDER BY id LIMIT 1000''',params).fetchall()
         return {'campaign_id':campaign_id,'eligible_leads':[dictrow(r) for r in rows], 'limit':1000}
 
 @app.get('/campaigns/{campaign_id}/audit',dependencies=[Depends(authorize)])
