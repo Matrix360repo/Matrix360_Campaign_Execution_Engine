@@ -54,3 +54,15 @@ def test_revoke_after_enqueue(api):
     with m.conn() as db:
         assert db.execute('SELECT status FROM execution_queue').fetchone()['status']=='skipped'
         assert db.execute('SELECT COUNT(*) n FROM jobs').fetchone()['n']==0
+
+
+def test_future_schedule_is_not_executed_early(api):
+    from datetime import datetime,timezone,timedelta
+    post(api,'/clients',{'id':'scheduled','name':'Scheduled Client'})
+    post(api,'/leads/import',{'client_id':'scheduled','leads':[{'source_id':'test','external_id':'one','email':'synthetic@example.test','email_allowed':True}]})
+    cid=post(api,'/campaigns',{'client_id':'scheduled','name':'Future rehearsal','channel':'email','message':'Synthetic','scheduled_at':(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()})['id']
+    for action in ['validate','approve','enqueue']:post(api,f'/campaigns/{cid}/{action}')
+    from app import main,execution
+    assert execution.run_once(main)==0
+    with main.conn() as db:db.execute('UPDATE execution_queue SET available_at=? WHERE campaign_id=?',(time.time()-1,cid))
+    assert execution.run_once(main)==1

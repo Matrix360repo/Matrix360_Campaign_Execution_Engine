@@ -25,3 +25,18 @@ def test_database_backup_restoration_preserves_records(tmp_path):
     with sqlite3.connect(restored) as db:
         assert db.execute('SELECT * FROM jobs').fetchall()==[('synthetic-job','mock_delivered')]
     with pytest.raises(ValueError):restore_sqlite(backup,source)
+
+
+def test_permission_evidence_and_suppression_are_independent(api):
+    post(api,'/clients',{'id':'permission','name':'Permission Client'})
+    post(api,'/leads/import',{'client_id':'permission','leads':[{'source_id':'test','external_id':'one','email':'synthetic@example.test','suppressed':True}]})
+    h={'X-Admin-Key':'test-key'}
+    lid=api.get('/clients/permission/leads',headers=h).json()['leads'][0]['id']
+    post(api,f'/leads/{lid}/permission',{'channel':'email','allowed':True,'evidence':'Synthetic permission evidence'})
+    rows=api.get('/clients/permission/leads',headers=h).json()['leads']
+    assert rows[0]['email_allowed']==rows[0]['suppressed']==1
+    post(api,f'/leads/{lid}/suppression',{'suppressed':False,'reason':'Synthetic administrator review'})
+    from app import main
+    with main.conn() as db:
+        assert db.execute('SELECT COUNT(*) n FROM permission_history').fetchone()['n']==1
+        assert db.execute('SELECT COUNT(*) n FROM suppression_history').fetchone()['n']==1

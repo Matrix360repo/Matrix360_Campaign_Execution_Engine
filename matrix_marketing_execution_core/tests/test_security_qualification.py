@@ -19,6 +19,7 @@ def test_real_user_isolation_roles_and_logout(api):
     post(api,'/clients',{'id':'client-a','name':'A Client'})
     post(api,'/clients',{'id':'client-b','name':'B Client'})
     cid=post(api,'/campaigns',{'client_id':'client-b','name':'Private campaign','channel':'email','message':'Synthetic'})['id']
+    user(api,'owner','admin',[])
     user(api,'alice','operator',['client-a']);user(api,'bob','viewer',['client-b'])
     alice=session(api,'alice')
     assert api.get('/console-data',headers=alice).json()['clients'][0]['id']=='client-a'

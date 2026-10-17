@@ -109,6 +109,8 @@ def install(m):
         require_role('admin')
         with m.conn() as db:
             db.execute('BEGIN IMMEDIATE')
+            if not db.execute('SELECT 1 FROM users').fetchone() and payload.role!='admin':
+                raise HTTPException(422,'The first account must be an administrator')
             for cid in payload.client_ids: m.row_or_404(db,'clients',cid)
             if db.execute('SELECT 1 FROM users WHERE username=?',(payload.username.lower(),)).fetchone():
                 raise HTTPException(409,'Username already exists')

@@ -16,6 +16,7 @@ from fastapi import FastAPI, Header, HTTPException, Depends, Request
 from .security import principal, require_client, require_role, SCHEMA as AUTH_SCHEMA
 from .qualification import SCHEMA as QUAL_SCHEMA, eligible_clause
 from .execution import SCHEMA as EXEC_SCHEMA, fingerprint
+from .permissions import SCHEMA as PERMISSION_SCHEMA
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -82,6 +83,7 @@ def init_db():
         db.executescript(AUTH_SCHEMA)
         db.executescript(QUAL_SCHEMA)
         db.executescript(EXEC_SCHEMA)
+        db.executescript(PERMISSION_SCHEMA)
         db.executescript('''CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS queue_ready_idx ON execution_queue(status,available_at);
         CREATE INDEX IF NOT EXISTS lead_client_idx ON leads(client_id);
@@ -251,6 +253,7 @@ def approve_campaign(campaign_id: str):
 
 @app.post('/campaigns/{campaign_id}/dispatch-mock',dependencies=[Depends(authorize)])
 def mock_dispatch(campaign_id: str):
+    if APP_ENV!='development':raise HTTPException(409,'Use the durable simulation queue in hosted staging')
     with conn() as db:
         db.execute('BEGIN IMMEDIATE')
         c=row_or_404(db,'campaigns',campaign_id)
@@ -345,3 +348,6 @@ qualification.install(sys.modules[__name__])
 
 from . import execution
 execution.install(sys.modules[__name__])
+
+from . import permissions
+permissions.install(sys.modules[__name__])
