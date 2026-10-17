@@ -10,6 +10,7 @@ jobs:
   acceptance:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         backend: [sqlite, postgres]
     services:
@@ -68,3 +69,9 @@ jobs:
           else: raise RuntimeError('Application did not start')
           PYREADY
       - run: node tests/browser/acceptance.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-browser-evidence
+          path: /tmp/pratha-*-acceptance.png
+          if-no-files-found: ignore

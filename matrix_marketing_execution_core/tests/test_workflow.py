@@ -15,7 +15,7 @@ def api(tmp_path,monkeypatch):
         schema='test_'+uuid.uuid4().hex
         with psycopg.connect(url,autocommit=True) as setup:
             setup.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
-        monkeypatch.setenv('DATABASE_URL',url+('\u0026' if '?' in url else '?')+urlencode({'options':'-c search_path='+schema}))
+        monkeypatch.setenv('DATABASE_URL',url+('\u0026' if '?' in url else '?')+urlencode({'options':'-csearch_path='+schema}))
     else: monkeypatch.delenv('DATABASE_URL',raising=False)
     import importlib,app.main
     m=importlib.reload(app.main)
